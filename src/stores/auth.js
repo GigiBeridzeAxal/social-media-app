@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(JSON.parse(localStorage.getItem('user') || 'null'))
   const token = ref(localStorage.getItem('token') || null)
@@ -29,24 +31,23 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      // Simulate API call — replace with real API endpoint
-      await new Promise(resolve => setTimeout(resolve, 1200))
-
       if (!email || !password) {
         throw new Error('Email and password are required')
       }
 
-      // Simulated successful response
-      const userData = {
-        id: crypto.randomUUID(),
-        email,
-        name: email.split('@')[0],
-        avatar: null,
-        createdAt: new Date().toISOString()
-      }
-      const authToken = 'token_' + crypto.randomUUID()
+      const res = await fetch(`${API_BASE}/api/auth/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
 
-      setAuth(userData, authToken)
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Sign in failed')
+      }
+
+      setAuth(data.user, data.token)
       return { success: true }
     } catch (err) {
       error.value = err.message || 'Sign in failed. Please try again.'
@@ -61,8 +62,6 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1200))
-
       if (!name || !email || !password) {
         throw new Error('All fields are required')
       }
@@ -71,16 +70,19 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('Password must be at least 8 characters')
       }
 
-      const userData = {
-        id: crypto.randomUUID(),
-        email,
-        name,
-        avatar: null,
-        createdAt: new Date().toISOString()
-      }
-      const authToken = 'token_' + crypto.randomUUID()
+      const res = await fetch(`${API_BASE}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password })
+      })
 
-      setAuth(userData, authToken)
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Sign up failed')
+      }
+
+      setAuth(data.user, data.token)
       return { success: true }
     } catch (err) {
       error.value = err.message || 'Sign up failed. Please try again.'
@@ -93,7 +95,6 @@ export const useAuthStore = defineStore('auth', () => {
   async function signOut() {
     loading.value = true
     try {
-      await new Promise(resolve => setTimeout(resolve, 300))
       clearAuth()
     } finally {
       loading.value = false
@@ -105,10 +106,20 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
       if (!email) {
         throw new Error('Email is required')
+      }
+
+      const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send reset email')
       }
 
       return { success: true }
