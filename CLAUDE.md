@@ -26,9 +26,16 @@ STRICT SCOPE RULES — READ CAREFULLY:
 
 Complete the following task:
 
-[Auth System] Sign Up Backend — For Signup In Frontend I Want You To Create Backend with jwt token and cookies Make Best Possible Auth System We Dont Need Email Sends Yet Just Acocunt Creating And Saving In Mongodb And If Its Sucesfully Create Create new Token and Set Into client's cookies
+[MongoDB] Vercel Envorinment Variables Add — Add Vercel Envorinment Variables With My Linked Account Add Mongo URI from .env on vercel
 
 Work through this task carefully. Write production-quality code. Verify your work compiles/runs.
+
+IMPORTANT — AFTER COMPLETING YOUR WORK:
+1. Stage all changes: git add .
+2. Commit with a clear message describing what you built: git commit -m "description of changes"
+3. Push to the repository immediately: git push
+Do NOT ask for permission or confirmation before pushing. Always push your changes automatically when you are done.
+
 When done, confirm exactly which tasks you completed and nothing else.
 
 ## Your Environment
