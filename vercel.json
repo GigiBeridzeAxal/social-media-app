@@ -4,7 +4,8 @@
   "framework": "vite",
   "functions": {
     "api/**/*.js": {
-      "runtime": "@vercel/node@3"
+      "memory": 256,
+      "maxDuration": 10
     }
   },
   "rewrites": [
