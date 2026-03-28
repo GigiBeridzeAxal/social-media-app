@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { api } from '../services/api'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -78,18 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('Email and password are required')
       }
 
-      const res = await fetch(`${API_BASE}/api/auth/signin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Sign in failed')
-      }
-
+      const data = await api.post('/api/auth/signin', { email, password })
       setAuth(data.user, data.token)
       return { success: true }
     } catch (err) {
@@ -113,18 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('Password must be at least 8 characters')
       }
 
-      const res = await fetch(`${API_BASE}/api/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Sign up failed')
-      }
-
+      const data = await api.post('/api/auth/signup', { name, email, password })
       setAuth(data.user, data.token)
       return { success: true }
     } catch (err) {
@@ -138,7 +117,31 @@ export const useAuthStore = defineStore('auth', () => {
   async function signOut() {
     loading.value = true
     try {
+      await api.post('/api/auth/logout').catch(() => {})
       clearAuth()
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function changePassword(currentPassword, newPassword) {
+    loading.value = true
+    error.value = null
+
+    try {
+      if (!currentPassword || !newPassword) {
+        throw new Error('Both current and new password are required')
+      }
+
+      if (newPassword.length < 8) {
+        throw new Error('New password must be at least 8 characters')
+      }
+
+      await api.post('/api/auth/change-password', { currentPassword, newPassword })
+      return { success: true }
+    } catch (err) {
+      error.value = err.message || 'Failed to change password.'
+      return { success: false, error: error.value }
     } finally {
       loading.value = false
     }
@@ -153,18 +156,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('Email is required')
       }
 
-      const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to send reset email')
-      }
-
+      await api.post('/api/auth/forgot-password', { email })
       return { success: true }
     } catch (err) {
       error.value = err.message || 'Failed to send reset email.'
@@ -184,6 +176,7 @@ export const useAuthStore = defineStore('auth', () => {
     signIn,
     signUp,
     signOut,
+    changePassword,
     forgotPassword,
     checkAuth,
     authChecked

@@ -35,6 +35,18 @@ const routes = [
     name: 'ForgotPassword',
     component: () => import('../views/auth/ForgotPasswordView.vue'),
     meta: { guest: true }
+  },
+  {
+    path: '/profile/:id',
+    name: 'Profile',
+    component: () => import('../views/ProfileView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('../views/SettingsView.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 
