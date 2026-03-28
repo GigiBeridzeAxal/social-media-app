@@ -11,6 +11,49 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value)
   const currentUser = computed(() => user.value)
+  const authChecked = ref(false)
+
+  async function checkAuth() {
+    if (!token.value) {
+      authChecked.value = true
+      return false
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token.value}`
+        }
+      })
+
+      if (!res.ok) {
+        clearAuth()
+        authChecked.value = true
+        return false
+      }
+
+      const data = await res.json()
+
+      if (data.authenticated) {
+        if (data.user) {
+          user.value = data.user
+          localStorage.setItem('user', JSON.stringify(data.user))
+        }
+        authChecked.value = true
+        return true
+      }
+
+      clearAuth()
+      authChecked.value = true
+      return false
+    } catch {
+      // If backend is unreachable, fall back to local token check
+      authChecked.value = true
+      return !!token.value
+    }
+  }
 
   function setAuth(userData, authToken) {
     user.value = userData
@@ -141,6 +184,8 @@ export const useAuthStore = defineStore('auth', () => {
     signIn,
     signUp,
     signOut,
-    forgotPassword
+    forgotPassword,
+    checkAuth,
+    authChecked
   }
 })

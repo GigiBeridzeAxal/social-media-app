@@ -9,10 +9,20 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('../views/HomeView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/signin',
     name: 'SignIn',
     component: () => import('../views/auth/SignInView.vue'),
     meta: { guest: true }
+  },
+  {
+    path: '/login',
+    redirect: '/signin'
   },
   {
     path: '/signup',
@@ -33,13 +43,19 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+
+  // On first navigation, verify auth status with backend
+  if (!authStore.authChecked) {
+    await authStore.checkAuth()
+  }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'SignIn' })
   } else if (to.meta.guest && authStore.isAuthenticated) {
-    next({ name: 'Home' })
+    // Authenticated users visiting login/signup pages get redirected to dashboard
+    next({ name: 'Dashboard' })
   } else {
     next()
   }
