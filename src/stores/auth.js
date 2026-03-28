@@ -37,11 +37,9 @@ export const useAuthStore = defineStore('auth', () => {
 
       const data = await res.json()
 
-      if (data.authenticated) {
-        if (data.user) {
-          user.value = data.user
-          localStorage.setItem('user', JSON.stringify(data.user))
-        }
+      if (data.user) {
+        user.value = data.user
+        localStorage.setItem('user', JSON.stringify(data.user))
         authChecked.value = true
         return true
       }
