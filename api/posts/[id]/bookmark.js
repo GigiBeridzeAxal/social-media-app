@@ -1,7 +1,7 @@
-import connectDB from '../../lib/db.js'
-import Post from '../../lib/models/Post.js'
-import authMiddleware from '../../lib/authMiddleware.js'
-import { handleOptions } from '../../lib/cors.js'
+import connectDB from '../../_lib/db.js'
+import Post from '../../_lib/models/Post.js'
+import authMiddleware from '../../_lib/authMiddleware.js'
+import { handleOptions } from '../../_lib/cors.js'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
