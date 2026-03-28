@@ -1,8 +1,17 @@
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 
+const router = useRouter()
 const authStore = useAuthStore()
+
+// Redirect authenticated users away from forgot-password page
+onMounted(() => {
+  if (authStore.isAuthenticated) {
+    router.replace({ name: 'Home' })
+  }
+})
 const email = ref('')
 const emailError = ref('')
 const emailSent = ref(false)
