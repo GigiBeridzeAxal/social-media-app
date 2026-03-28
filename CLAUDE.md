@@ -7,9 +7,9 @@ You are NOT a chatbot having a conversation. You are an agent executing a specif
 
 [Delegated by manager "Diana"]
 
-## Task: Build Protected Backend API Routes with Auth Middleware
+## Task: Build Protected Frontend Routes, API Service Layer & Auth Enhancements
 
-You are working on a **Vue 3 + Vercel Serverless** social media app. The repo is at `https://github.com/GigiBeridzeAxal/social-media-app.git` (public, main branch).
+You are working on a **Vue 3 + Pinia + Vue Router** social media app. The repo is at `https://github.com/GigiBeridzeAxal/social-media-app.git` (public, main branch).
 
 ### Step 1: Clone the repo
 ```bash
@@ -19,188 +19,276 @@ npm install
 ```
 
 ### What Already Exists
-The app already has these backend files in `api/`:
-- `api/auth/signin.js` - POST, JWT login, sets httpOnly cookie
-- `api/auth/signup.js` - POST, bcrypt + JWT registration 
-- `api/auth/me.js` - GET, uses authMiddleware to return current user
-- `api/auth/forgot-password.js` - POST, stub
-- `api/lib/authMiddleware.js` - JWT verification from Bearer header or cookie
-- `api/lib/db.js` - MongoDB connection (uses `process.env.MONGODB_URI`)
-- `api/lib/models/User.js` - Mongoose User model (name, email, password, avatar, timestamps)
 
-The JWT_SECRET is `process.env.JWT_SECRET || 'social-media-app-secret-key-change-in-production'`
+Frontend files in `src/`:
+- `src/main.js` - Creates app with Pinia + Router
+- `src/App.vue` - Just `<router-view />`
+- `src/router/index.js` - Router with guards: `meta.requiresAuth` redirects to SignIn, `meta.guest` redirects to Dashboard
+- `src/stores/auth.js` - Pinia store with signIn, signUp, signOut, checkAuth, token in localStorage
+- `src/views/HomeView.vue` - Dashboard/feed page (fully built with mock data)
+- `src/views/auth/SignInView.vue` - Sign in page (fully built)
+- `src/views/auth/SignUpView.vue` - Sign up page (fully built)
+- `src/views/auth/ForgotPasswordView.vue` - Forgot password page
+- `src/assets/main.css` - Global CSS with CSS variables
+
+The API base URL is `import.meta.env.VITE_API_URL || ''`
+Auth tokens are stored in localStorage as 'token' and 'user'.
 
 ### What You Need to Build
 
-**1. CORS Utility** (`api/lib/cors.js`)
-Create a shared CORS helper to DRY up the duplicated setCorsHeaders code:
+**1. API Service Layer** (`src/services/api.js`)
+Create a centralized API service using fetch (no axios needed, keep it lightweight):
+
 ```javascript
-export function setCorsHeaders(req, res) {
-  const origin = req.headers.origin
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
+class ApiService {
+  constructor() {
+    this.baseUrl = API_BASE
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+
+  getToken() {
+    return localStorage.getItem('token')
+  }
+
+  async request(endpoint, options = {}) {
+    const url = `${this.baseUrl}${endpoint}`
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    }
+
+    const token = this.getToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include', // for httpOnly cookies
+    })
+
+    // Handle 401 - token expired/invalid
+    if (response.status === 401) {
+      // Try to refresh token
+      const refreshed = await this.refreshToken()
+      if (refreshed) {
+        // Retry original request with new token
+        headers['Authorization'] = `Bearer ${this.getToken()}`
+        const retryResponse = await fetch(url, { ...options, headers, credentials: 'include' })
+        if (!retryResponse.ok) {
+          const error = await retryResponse.json().catch(() => ({ error: 'Request failed' }))
+          throw new ApiError(retryResponse.status, error.error || 'Request failed')
+        }
+        return retryResponse.json()
+      }
+      // Refresh failed - clear auth and redirect to login
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.href = '/signin'
+      throw new ApiError(401, 'Session expired')
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }))
+      throw new ApiError(response.status, error.error || 'Request failed')
+    }
+
+    return response.json()
+  }
+
+  async refreshToken() {
+    try {
+      const token = this.getToken()
+      if (!token) return false
+
+      const response = await fetch(`${this.baseUrl}/api/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      })
+
+      if (!response.ok) return false
+
+      const data = await response.json()
+      localStorage.setItem('token', data.token)
+      if (data.user) localStorage.setItem('user', JSON.stringify(data.user))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // Convenience methods
+  get(endpoint) { return this.request(endpoint) }
+  post(endpoint, body) { return this.request(endpoint, { method: 'POST', body: JSON.stringify(body) }) }
+  put(endpoint, body) { return this.request(endpoint, { method: 'PUT', body: JSON.stringify(body) }) }
+  delete(endpoint) { return this.request(endpoint, { method: 'DELETE' }) }
 }
 
-export function handleOptions(req, res) {
-  if (req.method === 'OPTIONS') {
-    setCorsHeaders(req, res)
-    res.status(200).end()
-    return true
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.status = status
   }
-  setCorsHeaders(req, res)
-  return false
+}
+
+export const api = new ApiService()
+export { ApiError }
+```
+
+**2. Posts Service** (`src/services/posts.js`)
+```javascript
+import { api } from './api'
+
+export const postsService = {
+  getFeed(page = 1, limit = 20) {
+    return api.get(`/api/posts?page=${page}&limit=${limit}`)
+  },
+  getPost(id) {
+    return api.get(`/api/posts/${id}`)
+  },
+  createPost(content, image = null) {
+    return api.post('/api/posts', { content, image })
+  },
+  deletePost(id) {
+    return api.delete(`/api/posts/${id}`)
+  },
+  toggleLike(id) {
+    return api.post(`/api/posts/${id}/like`)
+  },
+  toggleBookmark(id) {
+    return api.post(`/api/posts/${id}/bookmark`)
+  },
+  getComments(postId, page = 1) {
+    return api.get(`/api/posts/${postId}/comments?page=${page}`)
+  },
+  addComment(postId, content) {
+    return api.post(`/api/posts/${postId}/comments`, { content })
+  },
 }
 ```
-Then update the existing auth endpoints (signin, signup, me, forgot-password) to use this utility instead of their own local function.
 
-**2. Logout Endpoint** (`api/auth/logout.js`)
-- POST only
-- Clears the `token` httpOnly cookie by setting Max-Age=0
-- Returns `{ message: 'Logged out successfully' }`
-- No auth required (anyone can call it)
-
-**3. Token Refresh Endpoint** (`api/auth/refresh.js`)
-- POST only
-- Requires valid JWT (use authMiddleware)
-- Looks up user in DB to ensure they still exist
-- Issues a new JWT with fresh expiry (7 days)
-- Sets new httpOnly cookie
-- Returns `{ token, user }` (same format as signin)
-
-**4. Change Password Endpoint** (`api/auth/change-password.js`)
-- POST only, requires auth (authMiddleware)
-- Body: `{ currentPassword, newPassword }`
-- Validates current password matches
-- Validates new password >= 8 chars
-- Hashes new password with bcrypt (12 rounds)
-- Updates user in DB
-- Returns `{ message: 'Password changed successfully' }`
-
-**5. Post Model** (`api/lib/models/Post.js`)
+**3. Users Service** (`src/services/users.js`)
 ```javascript
-import mongoose from 'mongoose'
+import { api } from './api'
 
-const postSchema = new mongoose.Schema({
-  author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  content: { type: String, required: true, maxlength: 500 },
-  image: { type: String, default: null },
-  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-}, { timestamps: true })
-
-export default mongoose.models.Post || mongoose.model('Post', postSchema)
+export const usersService = {
+  getProfile(id) {
+    return api.get(`/api/users/${id}`)
+  },
+  updateProfile(id, data) {
+    return api.put(`/api/users/${id}`, data)
+  },
+  toggleFollow(id) {
+    return api.post(`/api/users/${id}/follow`)
+  },
+}
 ```
 
-**6. Comment Model** (`api/lib/models/Comment.js`)
+**4. Update Auth Store** (`src/stores/auth.js`)
+Update the existing auth store to:
+- Use the new API service for all calls
+- Add `logout()` method that calls `/api/auth/logout` to clear httpOnly cookie
+- Add `changePassword(currentPassword, newPassword)` method
+- Keep existing signIn, signUp, checkAuth, etc.
+- Make `signOut` call the logout endpoint before clearing local state
+
+**5. Profile Page** (`src/views/ProfileView.vue`)
+Create a user profile page that:
+- Shows user info (name, bio, avatar, follower/following counts)
+- Shows the user's posts
+- Has a follow/unfollow button (if viewing someone else's profile)
+- Has an "Edit Profile" button (if viewing own profile)
+- Is a protected route (requires auth)
+- Route: `/profile/:id`
+- Style it consistently with the existing HomeView design (use the same CSS variables, card styles, avatar system)
+
+**6. Settings Page** (`src/views/SettingsView.vue`)
+Create a settings page that:
+- Has a form to update profile (name, bio)
+- Has a form to change password (current password, new password, confirm new password)
+- Has a "Sign Out" button
+- Has a "Delete Account" button (just shows confirmation, doesn't need to work yet)
+- Is a protected route
+- Route: `/settings`
+- Style consistently with existing pages
+
+**7. Update Router** (`src/router/index.js`)
+Add the new routes to the existing router:
 ```javascript
-import mongoose from 'mongoose'
-
-const commentSchema = new mongoose.Schema({
-  post: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true },
-  author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  content: { type: String, required: true, maxlength: 300 },
-}, { timestamps: true })
-
-export default mongoose.models.Comment || mongoose.model('Comment', commentSchema)
+{
+  path: '/profile/:id',
+  name: 'Profile',
+  component: () => import('../views/ProfileView.vue'),
+  meta: { requiresAuth: true }
+},
+{
+  path: '/settings',
+  name: 'Settings',
+  component: () => import('../views/SettingsView.vue'),
+  meta: { requiresAuth: true }
+},
 ```
 
-**7. Update User Model** (`api/lib/models/User.js`)
-Add these fields to the existing schema:
-```javascript
-bio: { type: String, default: '', maxlength: 160 },
-followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-```
+Keep all existing routes and the beforeEach guard exactly as they are.
 
-**8. Posts CRUD Endpoints** (all require auth via authMiddleware):
+**8. Update HomeView sidebar links**
+In `src/views/HomeView.vue`, update the sidebar navigation links so that:
+- "Profile" link goes to `/profile/{currentUser.id}` 
+- "Settings" link goes to `/settings`
+- Use `router-link` or `router.push` instead of `@click.prevent` for these two
 
-`api/posts/index.js` - GET (list feed, paginated: ?page=1&limit=20) + POST (create post)
-- GET: Returns posts sorted by createdAt desc, populated with author (name, email, avatar), includes likes count, comments count, whether current user liked/bookmarked
-- POST: Creates new post. Body: `{ content, image? }`. Sets author from JWT userId.
+### CSS Variables (for reference)
+The app uses these CSS variables defined in `src/assets/main.css`:
+- `--color-bg`, `--color-surface`, `--color-primary`, `--color-primary-hover`, `--color-primary-bg`
+- `--color-text`, `--color-text-secondary`, `--color-text-muted`
+- `--color-border`, `--color-border-focus`, `--color-input-bg`
+- `--color-danger`, `--color-success`
+- `--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-full`
+- `--shadow-sm`, `--shadow-md`
+- `--transition`
+- `--font-family`
 
-`api/posts/[id].js` - GET (single post) + DELETE (only by author)
-- GET: Returns post with author populated
-- DELETE: Only the author can delete their own post
-
-`api/posts/[id]/like.js` - POST (toggle like)
-- If user already liked, remove like. If not, add like.
-- Returns `{ liked: true/false, likesCount: N }`
-
-`api/posts/[id]/bookmark.js` - POST (toggle bookmark)
-- Same toggle pattern as likes
-- Returns `{ bookmarked: true/false }`
-
-`api/posts/[id]/comments.js` - GET (list comments for post) + POST (add comment)
-- GET: Paginated, populated with author
-- POST: Body `{ content }`, sets author from JWT
-
-**9. User Profile Endpoints** (require auth):
-
-`api/users/[id].js` - GET (public profile) + PUT (update own profile)
-- GET: Returns user profile with follower/following counts
-- PUT: Only own profile. Body: `{ name?, bio?, avatar? }`. Returns updated user.
-
-`api/users/[id]/follow.js` - POST (toggle follow/unfollow)
-- If already following, unfollow. If not, follow.
-- Updates both users' followers/following arrays
-- Returns `{ following: true/false, followersCount: N }`
-
-### Important Patterns
-
-All endpoints must:
-1. Use `handleOptions` from `api/lib/cors.js` at the top
-2. Use `authMiddleware` from `api/lib/authMiddleware.js` for protected routes
-3. Use `connectDB` from `api/lib/db.js` 
-4. Handle errors properly with try/catch
-5. Return proper HTTP status codes
-6. Follow the exact file naming for Vercel serverless routing
-
-For Vercel dynamic routes, use bracket notation: `[id].js` in the folder name.
-
-### Vercel Config
-Update `vercel.json` if needed to ensure the new routes work. The current config already handles `api/**/*.js`.
+### Important Notes
+- Keep the same styling approach (scoped CSS, no external CSS framework)
+- Use the same avatar system (getInitials + getAvatarColor functions) from HomeView
+- All new pages should have responsive design
+- The profile and settings pages should have the same top-bar navigation as HomeView
+- Don't install any new npm packages - use only what's already in package.json
 
 ### After everything is done:
-- Make sure all files are created and saved
-- Run `npm install` to ensure dependencies are up to date (mongoose, bcryptjs, jsonwebtoken are already installed)
-- Commit all changes with a descriptive message
+- Make sure all files compile (`npm run build` should succeed)
+- Commit all changes with descriptive message
 - Push to main branch
 
 ### File structure when done:
 ```
-api/
-├── auth/
-│   ├── signin.js (updated - use cors utility)
-│   ├── signup.js (updated - use cors utility) 
-│   ├── me.js (updated - use cors utility)
-│   ├── forgot-password.js (updated - use cors utility)
-│   ├── logout.js (NEW)
-│   ├── refresh.js (NEW)
-│   └── change-password.js (NEW)
-├── posts/
-│   ├── index.js (NEW - GET list + POST create)
-│   └── [id]/
-│       ├── index.js (NEW - GET single + DELETE)
-│       ├── like.js (NEW - POST toggle)
-│       ├── bookmark.js (NEW - POST toggle)
-│       └── comments.js (NEW - GET list + POST add)
-├── users/
-│   └── [id]/
-│       ├── index.js (NEW - GET profile + PUT update)
-│       └── follow.js (NEW - POST toggle)
-├── lib/
-│   ├── authMiddleware.js (existing)
-│   ├── cors.js (NEW)
-│   ├── db.js (existing)
-│   └── models/
-│       ├── User.js (updated - add bio, followers, following)
-│       ├── Post.js (NEW)
-│       └── Comment.js (NEW)
-└── health.js (existing)
+src/
+├── services/
+│   ├── api.js (NEW - central API service with auth interceptor)
+│   ├── posts.js (NEW - posts API calls)
+│   └── users.js (NEW - users API calls)
+├── stores/
+│   └── auth.js (UPDATED - use api service, add logout/changePassword)
+├── router/
+│   └── index.js (UPDATED - add profile + settings routes)
+├── views/
+│   ├── HomeView.vue (UPDATED - wire sidebar links to router)
+│   ├── ProfileView.vue (NEW - user profile page)
+│   ├── SettingsView.vue (NEW - settings + change password)
+│   └── auth/
+│       ├── SignInView.vue (existing)
+│       ├── SignUpView.vue (existing)
+│       └── ForgotPasswordView.vue (existing)
+├── App.vue (existing, no changes)
+├── main.js (existing, no changes)
+└── assets/
+    └── main.css (existing, no changes)
 ```
 
 ## Your Environment
