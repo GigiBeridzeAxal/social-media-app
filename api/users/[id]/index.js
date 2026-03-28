@@ -11,29 +11,36 @@ export default async function handler(req, res) {
 
   const { id } = req.query
 
-  try {
-    await connectDB()
+  await connectDB()
 
-    if (req.method === 'GET') {
+  if (req.method === 'GET') {
+    try {
       const user = await User.findById(id).lean()
       if (!user) {
         return res.status(404).json({ error: 'User not found' })
       }
 
       return res.status(200).json({
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        avatar: user.avatar,
-        bio: user.bio || '',
-        followersCount: user.followers ? user.followers.length : 0,
-        followingCount: user.following ? user.following.length : 0,
-        isFollowing: user.followers ? user.followers.some(fid => fid.toString() === decoded.userId) : false,
-        createdAt: user.createdAt,
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          bio: user.bio || '',
+          followersCount: (user.followers || []).length,
+          followingCount: (user.following || []).length,
+          isFollowing: (user.followers || []).some(uid => uid.toString() === decoded.userId),
+          createdAt: user.createdAt.toISOString(),
+        },
       })
+    } catch (error) {
+      console.error('Get user profile error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
+  }
 
-    if (req.method === 'PUT') {
+  if (req.method === 'PUT') {
+    try {
       if (id !== decoded.userId) {
         return res.status(403).json({ error: 'You can only update your own profile' })
       }
@@ -42,7 +49,7 @@ export default async function handler(req, res) {
       const updates = {}
 
       if (name !== undefined) {
-        if (name.trim().length < 2) {
+        if (!name.trim() || name.trim().length < 2) {
           return res.status(400).json({ error: 'Name must be at least 2 characters' })
         }
         updates.name = name.trim()
@@ -59,26 +66,32 @@ export default async function handler(req, res) {
         updates.avatar = avatar
       }
 
-      const updatedUser = await User.findByIdAndUpdate(id, updates, { new: true }).lean()
-      if (!updatedUser) {
+      const user = await User.findByIdAndUpdate(id, updates, { new: true, runValidators: true }).lean()
+      if (!user) {
         return res.status(404).json({ error: 'User not found' })
       }
 
       return res.status(200).json({
-        id: updatedUser._id.toString(),
-        name: updatedUser.name,
-        email: updatedUser.email,
-        avatar: updatedUser.avatar,
-        bio: updatedUser.bio || '',
-        followersCount: updatedUser.followers ? updatedUser.followers.length : 0,
-        followingCount: updatedUser.following ? updatedUser.following.length : 0,
-        createdAt: updatedUser.createdAt,
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          bio: user.bio || '',
+          followersCount: (user.followers || []).length,
+          followingCount: (user.following || []).length,
+          createdAt: user.createdAt.toISOString(),
+        },
       })
+    } catch (error) {
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(e => e.message)
+        return res.status(400).json({ error: messages[0] })
+      }
+      console.error('Update user profile error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
-
-    return res.status(405).json({ error: 'Method not allowed' })
-  } catch (error) {
-    console.error('User profile error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
   }
+
+  return res.status(405).json({ error: 'Method not allowed' })
 }

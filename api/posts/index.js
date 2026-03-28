@@ -10,12 +10,12 @@ export default async function handler(req, res) {
   const decoded = authMiddleware(req, res)
   if (!decoded) return
 
-  try {
-    await connectDB()
+  await connectDB()
 
-    if (req.method === 'GET') {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
+  if (req.method === 'GET') {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1)
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20))
       const skip = (page - 1) * limit
 
       const posts = await Post.find()
@@ -30,34 +30,38 @@ export default async function handler(req, res) {
         { $match: { post: { $in: postIds } } },
         { $group: { _id: '$post', count: { $sum: 1 } } },
       ])
-      const commentCountMap = {}
-      commentCounts.forEach(c => { commentCountMap[c._id.toString()] = c.count })
+      const countMap = {}
+      commentCounts.forEach(c => { countMap[c._id.toString()] = c.count })
 
-      const enriched = posts.map(post => ({
+      const result = posts.map(post => ({
         id: post._id.toString(),
-        author: post.author,
+        author: {
+          id: post.author._id.toString(),
+          name: post.author.name,
+          email: post.author.email,
+          avatar: post.author.avatar,
+        },
         content: post.content,
         image: post.image,
-        likesCount: post.likes ? post.likes.length : 0,
-        commentsCount: commentCountMap[post._id.toString()] || 0,
-        liked: post.likes ? post.likes.some(id => id.toString() === decoded.userId) : false,
-        bookmarked: post.bookmarks ? post.bookmarks.some(id => id.toString() === decoded.userId) : false,
-        createdAt: post.createdAt,
-        updatedAt: post.updatedAt,
+        likesCount: post.likes.length,
+        commentsCount: countMap[post._id.toString()] || 0,
+        liked: post.likes.some(id => id.toString() === decoded.userId),
+        bookmarked: post.bookmarks.some(id => id.toString() === decoded.userId),
+        createdAt: post.createdAt.toISOString(),
+        updatedAt: post.updatedAt.toISOString(),
       }))
 
       const total = await Post.countDocuments()
 
-      return res.status(200).json({
-        posts: enriched,
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      })
+      return res.status(200).json({ posts: result, page, limit, total })
+    } catch (error) {
+      console.error('List posts error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
+  }
 
-    if (req.method === 'POST') {
+  if (req.method === 'POST') {
+    try {
       const { content, image } = req.body || {}
 
       if (!content || !content.trim()) {
@@ -74,25 +78,38 @@ export default async function handler(req, res) {
         image: image || null,
       })
 
-      const populated = await Post.findById(post._id).populate('author', 'name email avatar')
+      const populated = await Post.findById(post._id)
+        .populate('author', 'name email avatar')
+        .lean()
 
       return res.status(201).json({
-        id: populated._id.toString(),
-        author: populated.author,
-        content: populated.content,
-        image: populated.image,
-        likesCount: 0,
-        commentsCount: 0,
-        liked: false,
-        bookmarked: false,
-        createdAt: populated.createdAt,
-        updatedAt: populated.updatedAt,
+        post: {
+          id: populated._id.toString(),
+          author: {
+            id: populated.author._id.toString(),
+            name: populated.author.name,
+            email: populated.author.email,
+            avatar: populated.author.avatar,
+          },
+          content: populated.content,
+          image: populated.image,
+          likesCount: 0,
+          commentsCount: 0,
+          liked: false,
+          bookmarked: false,
+          createdAt: populated.createdAt.toISOString(),
+          updatedAt: populated.updatedAt.toISOString(),
+        },
       })
+    } catch (error) {
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(e => e.message)
+        return res.status(400).json({ error: messages[0] })
+      }
+      console.error('Create post error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
-
-    return res.status(405).json({ error: 'Method not allowed' })
-  } catch (error) {
-    console.error('Posts error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
   }
+
+  return res.status(405).json({ error: 'Method not allowed' })
 }

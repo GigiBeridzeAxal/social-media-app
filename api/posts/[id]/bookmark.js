@@ -6,12 +6,12 @@ import { handleOptions } from '../../lib/cors.js'
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
 
-  const decoded = authMiddleware(req, res)
-  if (!decoded) return
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
+
+  const decoded = authMiddleware(req, res)
+  if (!decoded) return
 
   const { id } = req.query
 
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       bookmarked: !alreadyBookmarked,
     })
   } catch (error) {
-    console.error('Bookmark error:', error)
+    console.error('Toggle bookmark error:', error)
     return res.status(500).json({ error: 'Internal server error' })
   }
 }

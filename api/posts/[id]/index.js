@@ -12,32 +12,47 @@ export default async function handler(req, res) {
 
   const { id } = req.query
 
-  try {
-    await connectDB()
+  await connectDB()
 
-    if (req.method === 'GET') {
-      const post = await Post.findById(id).populate('author', 'name email avatar').lean()
+  if (req.method === 'GET') {
+    try {
+      const post = await Post.findById(id)
+        .populate('author', 'name email avatar')
+        .lean()
+
       if (!post) {
         return res.status(404).json({ error: 'Post not found' })
       }
 
-      const commentsCount = await Comment.countDocuments({ post: id })
+      const commentsCount = await Comment.countDocuments({ post: post._id })
 
       return res.status(200).json({
-        id: post._id.toString(),
-        author: post.author,
-        content: post.content,
-        image: post.image,
-        likesCount: post.likes ? post.likes.length : 0,
-        commentsCount,
-        liked: post.likes ? post.likes.some(lid => lid.toString() === decoded.userId) : false,
-        bookmarked: post.bookmarks ? post.bookmarks.some(bid => bid.toString() === decoded.userId) : false,
-        createdAt: post.createdAt,
-        updatedAt: post.updatedAt,
+        post: {
+          id: post._id.toString(),
+          author: {
+            id: post.author._id.toString(),
+            name: post.author.name,
+            email: post.author.email,
+            avatar: post.author.avatar,
+          },
+          content: post.content,
+          image: post.image,
+          likesCount: post.likes.length,
+          commentsCount,
+          liked: post.likes.some(uid => uid.toString() === decoded.userId),
+          bookmarked: post.bookmarks.some(uid => uid.toString() === decoded.userId),
+          createdAt: post.createdAt.toISOString(),
+          updatedAt: post.updatedAt.toISOString(),
+        },
       })
+    } catch (error) {
+      console.error('Get post error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
+  }
 
-    if (req.method === 'DELETE') {
+  if (req.method === 'DELETE') {
+    try {
       const post = await Post.findById(id)
       if (!post) {
         return res.status(404).json({ error: 'Post not found' })
@@ -51,11 +66,11 @@ export default async function handler(req, res) {
       await Comment.deleteMany({ post: id })
 
       return res.status(200).json({ message: 'Post deleted successfully' })
+    } catch (error) {
+      console.error('Delete post error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
-
-    return res.status(405).json({ error: 'Method not allowed' })
-  } catch (error) {
-    console.error('Post [id] error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
   }
+
+  return res.status(405).json({ error: 'Method not allowed' })
 }

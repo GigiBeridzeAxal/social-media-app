@@ -6,12 +6,12 @@ import { handleOptions } from '../../lib/cors.js'
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
 
-  const decoded = authMiddleware(req, res)
-  if (!decoded) return
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
+
+  const decoded = authMiddleware(req, res)
+  if (!decoded) return
 
   const { id } = req.query
 
@@ -32,25 +32,25 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Current user not found' })
     }
 
-    const alreadyFollowing = currentUser.following.some(fid => fid.toString() === id)
+    const alreadyFollowing = targetUser.followers.some(uid => uid.toString() === decoded.userId)
 
     if (alreadyFollowing) {
-      currentUser.following = currentUser.following.filter(fid => fid.toString() !== id)
-      targetUser.followers = targetUser.followers.filter(fid => fid.toString() !== decoded.userId)
+      targetUser.followers = targetUser.followers.filter(uid => uid.toString() !== decoded.userId)
+      currentUser.following = currentUser.following.filter(uid => uid.toString() !== id)
     } else {
-      currentUser.following.push(id)
       targetUser.followers.push(decoded.userId)
+      currentUser.following.push(id)
     }
 
-    await currentUser.save()
     await targetUser.save()
+    await currentUser.save()
 
     return res.status(200).json({
       following: !alreadyFollowing,
       followersCount: targetUser.followers.length,
     })
   } catch (error) {
-    console.error('Follow error:', error)
+    console.error('Toggle follow error:', error)
     return res.status(500).json({ error: 'Internal server error' })
   }
 }

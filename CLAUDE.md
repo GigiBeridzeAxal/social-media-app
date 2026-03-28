@@ -5,38 +5,203 @@ You are NOT a chatbot having a conversation. You are an agent executing a specif
 
 ## Your Current Task
 
-You are a BACKEND-ONLY developer. Your role boundaries:
-ALLOWED: API routes, controllers, database models/schemas, middleware, server-side logic, authentication, authorization, database queries, backend tests, server configuration.
-FORBIDDEN: Do NOT create or modify frontend components, UI files, CSS, HTML templates, or client-side JavaScript. If a task requires frontend work, skip it and report that it needs a frontend developer.
-IMPORTANT: Only implement the exact endpoints and logic specified in your tasks. Do NOT create extra routes, models, or services beyond what is explicitly listed.
+[Delegated by manager "Diana"]
 
-You are working on the project "Social Media App".
-The project repository is: https://github.com/GigiBeridzeAxal/social-media-app
-Clone it first if needed.
+## Task: Build Protected Backend API Routes with Auth Middleware
 
+You are working on a **Vue 3 + Vercel Serverless** social media app. The repo is at `https://github.com/GigiBeridzeAxal/social-media-app.git` (public, main branch).
 
-STRICT SCOPE RULES — READ CAREFULLY:
-1. ONLY complete the tasks listed below. Do NOT add, create, or build anything not explicitly listed.
-2. If a task says "build sign in page", build ONLY the sign in page. Do NOT also build sign up, dashboard, profile, or any other page.
-3. Do NOT create placeholder pages, skeleton components, or "bonus" features.
-4. Do NOT set up routing for pages that are not in your task list.
-5. Do NOT create files, components, or modules that are not directly required by your listed tasks.
-6. When you finish your assigned tasks, STOP. Do not look for additional work to do.
-7. If you think something additional is needed, leave a comment in the code but do NOT build it.
+### Step 1: Clone the repo
+```bash
+git clone https://github.com/GigiBeridzeAxal/social-media-app.git
+cd social-media-app
+npm install
+```
 
-Complete the following task:
+### What Already Exists
+The app already has these backend files in `api/`:
+- `api/auth/signin.js` - POST, JWT login, sets httpOnly cookie
+- `api/auth/signup.js` - POST, bcrypt + JWT registration 
+- `api/auth/me.js` - GET, uses authMiddleware to return current user
+- `api/auth/forgot-password.js` - POST, stub
+- `api/lib/authMiddleware.js` - JWT verification from Bearer header or cookie
+- `api/lib/db.js` - MongoDB connection (uses `process.env.MONGODB_URI`)
+- `api/lib/models/User.js` - Mongoose User model (name, email, password, avatar, timestamps)
 
-[Auth System] Auth Middleware — Create Auth Middleware Were protected pages Will be protected by this middleware we need to confirm users token that its valid with secret also create auth/me endpoint for frontend to confirm authnetication
+The JWT_SECRET is `process.env.JWT_SECRET || 'social-media-app-secret-key-change-in-production'`
 
-Work through this task carefully. Write production-quality code. Verify your work compiles/runs.
+### What You Need to Build
 
-IMPORTANT — AFTER COMPLETING YOUR WORK:
-1. Stage all changes: git add .
-2. Commit with a clear message describing what you built: git commit -m "description of changes"
-3. Push to the repository immediately: git push
-Do NOT ask for permission or confirmation before pushing. Always push your changes automatically when you are done.
+**1. CORS Utility** (`api/lib/cors.js`)
+Create a shared CORS helper to DRY up the duplicated setCorsHeaders code:
+```javascript
+export function setCorsHeaders(req, res) {
+  const origin = req.headers.origin
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+}
 
-When done, confirm exactly which tasks you completed and nothing else.
+export function handleOptions(req, res) {
+  if (req.method === 'OPTIONS') {
+    setCorsHeaders(req, res)
+    res.status(200).end()
+    return true
+  }
+  setCorsHeaders(req, res)
+  return false
+}
+```
+Then update the existing auth endpoints (signin, signup, me, forgot-password) to use this utility instead of their own local function.
+
+**2. Logout Endpoint** (`api/auth/logout.js`)
+- POST only
+- Clears the `token` httpOnly cookie by setting Max-Age=0
+- Returns `{ message: 'Logged out successfully' }`
+- No auth required (anyone can call it)
+
+**3. Token Refresh Endpoint** (`api/auth/refresh.js`)
+- POST only
+- Requires valid JWT (use authMiddleware)
+- Looks up user in DB to ensure they still exist
+- Issues a new JWT with fresh expiry (7 days)
+- Sets new httpOnly cookie
+- Returns `{ token, user }` (same format as signin)
+
+**4. Change Password Endpoint** (`api/auth/change-password.js`)
+- POST only, requires auth (authMiddleware)
+- Body: `{ currentPassword, newPassword }`
+- Validates current password matches
+- Validates new password >= 8 chars
+- Hashes new password with bcrypt (12 rounds)
+- Updates user in DB
+- Returns `{ message: 'Password changed successfully' }`
+
+**5. Post Model** (`api/lib/models/Post.js`)
+```javascript
+import mongoose from 'mongoose'
+
+const postSchema = new mongoose.Schema({
+  author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  content: { type: String, required: true, maxlength: 500 },
+  image: { type: String, default: null },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+}, { timestamps: true })
+
+export default mongoose.models.Post || mongoose.model('Post', postSchema)
+```
+
+**6. Comment Model** (`api/lib/models/Comment.js`)
+```javascript
+import mongoose from 'mongoose'
+
+const commentSchema = new mongoose.Schema({
+  post: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true },
+  author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  content: { type: String, required: true, maxlength: 300 },
+}, { timestamps: true })
+
+export default mongoose.models.Comment || mongoose.model('Comment', commentSchema)
+```
+
+**7. Update User Model** (`api/lib/models/User.js`)
+Add these fields to the existing schema:
+```javascript
+bio: { type: String, default: '', maxlength: 160 },
+followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+```
+
+**8. Posts CRUD Endpoints** (all require auth via authMiddleware):
+
+`api/posts/index.js` - GET (list feed, paginated: ?page=1&limit=20) + POST (create post)
+- GET: Returns posts sorted by createdAt desc, populated with author (name, email, avatar), includes likes count, comments count, whether current user liked/bookmarked
+- POST: Creates new post. Body: `{ content, image? }`. Sets author from JWT userId.
+
+`api/posts/[id].js` - GET (single post) + DELETE (only by author)
+- GET: Returns post with author populated
+- DELETE: Only the author can delete their own post
+
+`api/posts/[id]/like.js` - POST (toggle like)
+- If user already liked, remove like. If not, add like.
+- Returns `{ liked: true/false, likesCount: N }`
+
+`api/posts/[id]/bookmark.js` - POST (toggle bookmark)
+- Same toggle pattern as likes
+- Returns `{ bookmarked: true/false }`
+
+`api/posts/[id]/comments.js` - GET (list comments for post) + POST (add comment)
+- GET: Paginated, populated with author
+- POST: Body `{ content }`, sets author from JWT
+
+**9. User Profile Endpoints** (require auth):
+
+`api/users/[id].js` - GET (public profile) + PUT (update own profile)
+- GET: Returns user profile with follower/following counts
+- PUT: Only own profile. Body: `{ name?, bio?, avatar? }`. Returns updated user.
+
+`api/users/[id]/follow.js` - POST (toggle follow/unfollow)
+- If already following, unfollow. If not, follow.
+- Updates both users' followers/following arrays
+- Returns `{ following: true/false, followersCount: N }`
+
+### Important Patterns
+
+All endpoints must:
+1. Use `handleOptions` from `api/lib/cors.js` at the top
+2. Use `authMiddleware` from `api/lib/authMiddleware.js` for protected routes
+3. Use `connectDB` from `api/lib/db.js` 
+4. Handle errors properly with try/catch
+5. Return proper HTTP status codes
+6. Follow the exact file naming for Vercel serverless routing
+
+For Vercel dynamic routes, use bracket notation: `[id].js` in the folder name.
+
+### Vercel Config
+Update `vercel.json` if needed to ensure the new routes work. The current config already handles `api/**/*.js`.
+
+### After everything is done:
+- Make sure all files are created and saved
+- Run `npm install` to ensure dependencies are up to date (mongoose, bcryptjs, jsonwebtoken are already installed)
+- Commit all changes with a descriptive message
+- Push to main branch
+
+### File structure when done:
+```
+api/
+├── auth/
+│   ├── signin.js (updated - use cors utility)
+│   ├── signup.js (updated - use cors utility) 
+│   ├── me.js (updated - use cors utility)
+│   ├── forgot-password.js (updated - use cors utility)
+│   ├── logout.js (NEW)
+│   ├── refresh.js (NEW)
+│   └── change-password.js (NEW)
+├── posts/
+│   ├── index.js (NEW - GET list + POST create)
+│   └── [id]/
+│       ├── index.js (NEW - GET single + DELETE)
+│       ├── like.js (NEW - POST toggle)
+│       ├── bookmark.js (NEW - POST toggle)
+│       └── comments.js (NEW - GET list + POST add)
+├── users/
+│   └── [id]/
+│       ├── index.js (NEW - GET profile + PUT update)
+│       └── follow.js (NEW - POST toggle)
+├── lib/
+│   ├── authMiddleware.js (existing)
+│   ├── cors.js (NEW)
+│   ├── db.js (existing)
+│   └── models/
+│       ├── User.js (updated - add bio, followers, following)
+│       ├── Post.js (NEW)
+│       └── Comment.js (NEW)
+└── health.js (existing)
+```
 
 ## Your Environment
 

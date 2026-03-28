@@ -12,19 +12,18 @@ export default async function handler(req, res) {
 
   const { id } = req.query
 
-  try {
-    await connectDB()
+  await connectDB()
 
-    // Verify post exists
-    const post = await Post.findById(id)
-    if (!post) {
-      return res.status(404).json({ error: 'Post not found' })
-    }
-
-    if (req.method === 'GET') {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
+  if (req.method === 'GET') {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1)
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20))
       const skip = (page - 1) * limit
+
+      const postExists = await Post.exists({ _id: id })
+      if (!postExists) {
+        return res.status(404).json({ error: 'Post not found' })
+      }
 
       const comments = await Comment.find({ post: id })
         .sort({ createdAt: -1 })
@@ -33,27 +32,31 @@ export default async function handler(req, res) {
         .populate('author', 'name email avatar')
         .lean()
 
-      const total = await Comment.countDocuments({ post: id })
-
-      const formatted = comments.map(c => ({
-        id: c._id.toString(),
-        post: c.post.toString(),
-        author: c.author,
-        content: c.content,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+      const result = comments.map(comment => ({
+        id: comment._id.toString(),
+        postId: comment.post.toString(),
+        author: {
+          id: comment.author._id.toString(),
+          name: comment.author.name,
+          email: comment.author.email,
+          avatar: comment.author.avatar,
+        },
+        content: comment.content,
+        createdAt: comment.createdAt.toISOString(),
+        updatedAt: comment.updatedAt.toISOString(),
       }))
 
-      return res.status(200).json({
-        comments: formatted,
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      })
-    }
+      const total = await Comment.countDocuments({ post: id })
 
-    if (req.method === 'POST') {
+      return res.status(200).json({ comments: result, page, limit, total })
+    } catch (error) {
+      console.error('List comments error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
+    }
+  }
+
+  if (req.method === 'POST') {
+    try {
       const { content } = req.body || {}
 
       if (!content || !content.trim()) {
@@ -64,27 +67,45 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Comment must be at most 300 characters' })
       }
 
+      const postExists = await Post.exists({ _id: id })
+      if (!postExists) {
+        return res.status(404).json({ error: 'Post not found' })
+      }
+
       const comment = await Comment.create({
         post: id,
         author: decoded.userId,
         content: content.trim(),
       })
 
-      const populated = await Comment.findById(comment._id).populate('author', 'name email avatar')
+      const populated = await Comment.findById(comment._id)
+        .populate('author', 'name email avatar')
+        .lean()
 
       return res.status(201).json({
-        id: populated._id.toString(),
-        post: populated.post.toString(),
-        author: populated.author,
-        content: populated.content,
-        createdAt: populated.createdAt,
-        updatedAt: populated.updatedAt,
+        comment: {
+          id: populated._id.toString(),
+          postId: populated.post.toString(),
+          author: {
+            id: populated.author._id.toString(),
+            name: populated.author.name,
+            email: populated.author.email,
+            avatar: populated.author.avatar,
+          },
+          content: populated.content,
+          createdAt: populated.createdAt.toISOString(),
+          updatedAt: populated.updatedAt.toISOString(),
+        },
       })
+    } catch (error) {
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(e => e.message)
+        return res.status(400).json({ error: messages[0] })
+      }
+      console.error('Create comment error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
     }
-
-    return res.status(405).json({ error: 'Method not allowed' })
-  } catch (error) {
-    console.error('Comments error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
   }
+
+  return res.status(405).json({ error: 'Method not allowed' })
 }
