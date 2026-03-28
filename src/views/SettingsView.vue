@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usersService } from '../services/users'
+import ProfileDropdown from '../components/ProfileDropdown.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -87,16 +88,6 @@ async function handleSignOut() {
   router.push({ name: 'SignIn' })
 }
 
-function getInitials(name) {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase()
-}
-
-function getAvatarColor(name) {
-  const colors = ['#6C5CE7', '#00CEC9', '#E17055', '#00B894', '#FDCB6E', '#A29BFE', '#FF7675', '#74B9FF']
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
-  return colors[Math.abs(hash) % colors.length]
-}
 </script>
 
 <template>
@@ -126,11 +117,11 @@ function getAvatarColor(name) {
         </div>
 
         <div class="user-actions">
-          <div class="user-avatar-btn" @click="handleSignOut" :title="'Sign out'">
-            <div class="avatar avatar-sm" :style="{ background: getAvatarColor(authStore.currentUser?.name || 'User') }">
-              {{ getInitials(authStore.currentUser?.name || 'User') }}
-            </div>
-          </div>
+          <ProfileDropdown
+            :user-name="authStore.currentUser?.name || 'User'"
+            :user-id="authStore.currentUser?.id || 'me'"
+            @signout="handleSignOut"
+          />
         </div>
       </div>
     </header>
@@ -249,15 +240,6 @@ function getAvatarColor(name) {
 .search-input:focus { border-color: var(--color-primary); background: var(--color-surface); box-shadow: 0 0 0 3px var(--color-primary-bg); }
 
 .user-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.user-avatar-btn { cursor: pointer; transition: transform var(--transition); }
-.user-avatar-btn:hover { transform: scale(1.05); }
-
-.avatar {
-  display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  font-weight: 600; color: white; flex-shrink: 0; user-select: none;
-}
-.avatar-sm { width: 32px; height: 32px; font-size: 0.7rem; }
-
 .settings-container {
   max-width: 600px;
   margin: 0 auto;

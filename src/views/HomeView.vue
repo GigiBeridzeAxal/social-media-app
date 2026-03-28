@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import ProfileDropdown from '../components/ProfileDropdown.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -167,11 +168,11 @@ function getAvatarColor(name) {
             </svg>
             <span class="badge-dot"></span>
           </button>
-          <div class="user-avatar-btn" @click="handleSignOut" :title="'Sign out (' + mockUser.name + ')'">
-            <div class="avatar avatar-sm" :style="{ background: getAvatarColor(mockUser.name) }">
-              {{ getInitials(mockUser.name) }}
-            </div>
-          </div>
+          <ProfileDropdown
+            :user-name="mockUser.name"
+            :user-id="authStore.currentUser?.id || 'me'"
+            @signout="handleSignOut"
+          />
         </div>
       </div>
     </header>
@@ -516,15 +517,6 @@ function getAvatarColor(name) {
   background: var(--color-danger);
   border-radius: 50%;
   border: 2px solid var(--color-surface);
-}
-
-.user-avatar-btn {
-  cursor: pointer;
-  transition: transform var(--transition);
-}
-
-.user-avatar-btn:hover {
-  transform: scale(1.05);
 }
 
 /* Avatar System */

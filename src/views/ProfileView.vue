@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usersService } from '../services/users'
+import ProfileDropdown from '../components/ProfileDropdown.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -121,11 +122,11 @@ watch(() => route.params.id, () => {
               <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
             </svg>
           </button>
-          <div class="user-avatar-btn" @click="handleSignOut" :title="'Sign out'">
-            <div class="avatar avatar-sm" :style="{ background: getAvatarColor(authStore.currentUser?.name || 'User') }">
-              {{ getInitials(authStore.currentUser?.name || 'User') }}
-            </div>
-          </div>
+          <ProfileDropdown
+            :user-name="authStore.currentUser?.name || 'User'"
+            :user-id="authStore.currentUser?.id || 'me'"
+            @signout="handleSignOut"
+          />
         </div>
       </div>
     </header>
@@ -260,9 +261,6 @@ watch(() => route.params.id, () => {
   background: none; border-radius: var(--radius-full); color: var(--color-text-secondary); transition: all var(--transition);
 }
 .icon-btn:hover { background: var(--color-input-bg); color: var(--color-primary); }
-.user-avatar-btn { cursor: pointer; transition: transform var(--transition); }
-.user-avatar-btn:hover { transform: scale(1.05); }
-
 .avatar {
   display: flex; align-items: center; justify-content: center; border-radius: 50%;
   font-weight: 600; color: white; flex-shrink: 0; user-select: none;
