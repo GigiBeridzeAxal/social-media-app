@@ -308,7 +308,17 @@ function handleForgotPassword(req, res) {
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
 
-  const action = (req.query.action || []).join('/')
+  // Extract action from catch-all query param, or fallback to URL path parsing
+  let action = ''
+  if (req.query.action && Array.isArray(req.query.action) && req.query.action.length > 0) {
+    action = req.query.action.join('/')
+  } else {
+    const urlPath = (req.url || '').split('?')[0]
+    const match = urlPath.match(/\/api\/auth\/(.+)/)
+    if (match) {
+      action = match[1]
+    }
+  }
 
   switch (action) {
     case 'signin':          return handleSignin(req, res)
