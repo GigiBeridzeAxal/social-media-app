@@ -2,28 +2,15 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import connectDB from '../lib/db.js'
 import User from '../lib/models/User.js'
+import { handleOptions } from '../lib/cors.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'social-media-app-secret-key-change-in-production'
 const BCRYPT_SALT_ROUNDS = 12
 const TOKEN_EXPIRY = '7d'
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 // 7 days in seconds
 
-function setCorsHeaders(req, res) {
-  const origin = req.headers.origin
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
-}
-
 export default async function handler(req, res) {
-  setCorsHeaders(req, res)
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
+  if (handleOptions(req, res)) return
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })

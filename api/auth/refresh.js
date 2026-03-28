@@ -1,12 +1,12 @@
-import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import connectDB from '../lib/db.js'
 import User from '../lib/models/User.js'
+import authMiddleware from '../lib/authMiddleware.js'
 import { handleOptions } from '../lib/cors.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'social-media-app-secret-key-change-in-production'
 const TOKEN_EXPIRY = '7d'
-const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 // 7 days in seconds
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
@@ -15,35 +15,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { email, password } = req.body || {}
-
-  // Validate required fields
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' })
-  }
-
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ error: 'Invalid email address' })
-  }
+  const decoded = authMiddleware(req, res)
+  if (!decoded) return
 
   try {
     await connectDB()
 
-    // Find user by email, explicitly include password field (select: false in schema)
-    const existingUser = await User.findOne({ email: email.toLowerCase().trim() }).select('+password')
+    const existingUser = await User.findById(decoded.userId)
     if (!existingUser) {
-      return res.status(401).json({ error: 'Invalid email or password' })
+      return res.status(404).json({ error: 'User not found' })
     }
 
-    // Compare provided password with stored hash
-    const isPasswordValid = await bcrypt.compare(password, existingUser.password)
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid email or password' })
-    }
-
-    // Build user response object (exclude password)
     const user = {
       id: existingUser._id.toString(),
       name: existingUser.name,
@@ -52,14 +34,12 @@ export default async function handler(req, res) {
       createdAt: existingUser.createdAt.toISOString(),
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       JWT_SECRET,
       { expiresIn: TOKEN_EXPIRY }
     )
 
-    // Set token as httpOnly cookie
     const cookieOptions = [
       `token=${token}`,
       `HttpOnly`,
@@ -68,7 +48,6 @@ export default async function handler(req, res) {
       `SameSite=Lax`,
     ]
 
-    // Use Secure flag in production (HTTPS)
     if (process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production') {
       cookieOptions.push('Secure')
     }
@@ -77,7 +56,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ user, token })
   } catch (error) {
-    console.error('Signin error:', error)
+    console.error('Token refresh error:', error)
     return res.status(500).json({ error: 'Internal server error' })
   }
 }

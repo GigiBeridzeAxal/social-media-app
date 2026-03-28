@@ -1,23 +1,10 @@
 import connectDB from '../lib/db.js'
 import User from '../lib/models/User.js'
 import authMiddleware from '../lib/authMiddleware.js'
-
-function setCorsHeaders(req, res) {
-  const origin = req.headers.origin
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
-}
+import { handleOptions } from '../lib/cors.js'
 
 export default async function handler(req, res) {
-  setCorsHeaders(req, res)
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
+  if (handleOptions(req, res)) return
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' })
