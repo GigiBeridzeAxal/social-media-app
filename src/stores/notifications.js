@@ -13,24 +13,20 @@ export const useNotificationsStore = defineStore('notifications', () => {
   async function fetchNotifications() {
     loading.value = true
     error.value = null
+
     try {
-      // Mock data until notifications backend is built
-      notifications.value = [
-        { id: '1', type: 'like', message: 'Someone liked your post', read: false, createdAt: new Date().toISOString() },
-        { id: '2', type: 'follow', message: 'Someone started following you', read: false, createdAt: new Date().toISOString() },
-        { id: '3', type: 'comment', message: 'Someone commented on your post', read: true, createdAt: new Date().toISOString() },
-      ]
-      return notifications.value
+      // Notifications API not yet implemented - return empty for now
+      // Will be replaced with real API call: api.get('/api/notifications')
+      notifications.value = []
     } catch (err) {
       error.value = err.message
-      throw err
     } finally {
       loading.value = false
     }
   }
 
-  function markAsRead(id) {
-    const notification = notifications.value.find(n => n.id === id)
+  function markAsRead(notificationId) {
+    const notification = notifications.value.find(n => n.id === notificationId)
     if (notification) {
       notification.read = true
     }
@@ -38,6 +34,14 @@ export const useNotificationsStore = defineStore('notifications', () => {
 
   function markAllRead() {
     notifications.value.forEach(n => { n.read = true })
+  }
+
+  function addNotification(notification) {
+    notifications.value = [notification, ...notifications.value]
+  }
+
+  function clearNotifications() {
+    notifications.value = []
   }
 
   return {
@@ -48,5 +52,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     fetchNotifications,
     markAsRead,
     markAllRead,
+    addNotification,
+    clearNotifications,
   }
 })

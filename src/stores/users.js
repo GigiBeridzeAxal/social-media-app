@@ -7,33 +7,40 @@ export const useUsersStore = defineStore('users', () => {
   const userPosts = ref([])
   const loading = ref(false)
   const error = ref(null)
+  const userPostsPage = ref(1)
+  const userPostsHasMore = ref(true)
+  const userPostsTotal = ref(0)
 
   async function fetchProfile(userId) {
     loading.value = true
     error.value = null
+
     try {
       const data = await usersService.getProfile(userId)
       profile.value = data.user
       return data.user
     } catch (err) {
       error.value = err.message
-      throw err
+      return null
     } finally {
       loading.value = false
     }
   }
 
   async function updateProfile(data) {
-    if (!profile.value) return
     loading.value = true
     error.value = null
+
     try {
+      if (!profile.value) {
+        throw new Error('No profile loaded')
+      }
       const result = await usersService.updateProfile(profile.value.id, data)
       profile.value = result.user
       return result.user
     } catch (err) {
       error.value = err.message
-      throw err
+      return null
     } finally {
       loading.value = false
     }
@@ -41,32 +48,60 @@ export const useUsersStore = defineStore('users', () => {
 
   async function toggleFollow(userId) {
     error.value = null
+
     try {
       const data = await usersService.toggleFollow(userId)
-      if (profile.value && profile.value.id === userId) {
+      if (profile.value?.id === userId) {
         profile.value.isFollowing = data.following
         profile.value.followersCount = data.followersCount
       }
       return data
     } catch (err) {
       error.value = err.message
-      throw err
+      return null
     }
   }
 
-  async function fetchUserPosts(userId, page = 1) {
+  async function fetchUserPosts(userId, reset = false) {
+    if (loading.value) return
     loading.value = true
     error.value = null
+
     try {
-      const data = await usersService.getUserPosts(userId, page)
-      userPosts.value = data.posts
-      return data
+      if (reset) {
+        userPosts.value = []
+        userPostsPage.value = 1
+        userPostsHasMore.value = true
+        userPostsTotal.value = 0
+      }
+
+      const currentPage = reset ? 1 : userPostsPage.value
+      const data = await usersService.getUserPosts(userId, currentPage)
+
+      if (reset) {
+        userPosts.value = data.posts
+      } else {
+        const existingIds = new Set(userPosts.value.map(p => p.id))
+        const newPosts = data.posts.filter(p => !existingIds.has(p.id))
+        userPosts.value = [...userPosts.value, ...newPosts]
+      }
+
+      userPostsTotal.value = data.total
+      userPostsHasMore.value = userPosts.value.length < data.total
+      userPostsPage.value = currentPage + 1
     } catch (err) {
       error.value = err.message
-      throw err
     } finally {
       loading.value = false
     }
+  }
+
+  function clearProfile() {
+    profile.value = null
+    userPosts.value = []
+    userPostsPage.value = 1
+    userPostsHasMore.value = true
+    userPostsTotal.value = 0
   }
 
   return {
@@ -74,9 +109,13 @@ export const useUsersStore = defineStore('users', () => {
     userPosts,
     loading,
     error,
+    userPostsPage,
+    userPostsHasMore,
+    userPostsTotal,
     fetchProfile,
     updateProfile,
     toggleFollow,
     fetchUserPosts,
+    clearProfile,
   }
 })
