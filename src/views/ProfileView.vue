@@ -3,7 +3,9 @@ import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usersService } from '../services/users'
+import { postsService } from '../services/posts'
 import ProfileDropdown from '../components/ProfileDropdown.vue'
+import PostCard from '../components/PostCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,68 +14,107 @@ const authStore = useAuthStore()
 const profileUser = ref(null)
 const userPosts = ref([])
 const loading = ref(true)
-const error = ref(null)
-const followLoading = ref(false)
+const postsLoading = ref(false)
 
 const isOwnProfile = computed(() => {
-  return authStore.currentUser && String(authStore.currentUser.id) === String(route.params.id)
+  const userId = authStore.currentUser?.id || authStore.currentUser?._id
+  return userId && String(userId) === String(route.params.id)
 })
 
 const mockProfile = computed(() => ({
   id: route.params.id,
-  name: isOwnProfile.value ? (authStore.currentUser?.name || 'Alex Johnson') : 'User',
-  username: isOwnProfile.value ? (authStore.currentUser?.username || '@alexjohnson') : '@user',
-  bio: isOwnProfile.value ? 'Full-stack developer & design enthusiast. Building cool things.' : 'Social media user.',
+  name: isOwnProfile.value ? (authStore.currentUser?.name || 'User') : 'User',
+  username: isOwnProfile.value ? (authStore.currentUser?.username || '@user') : '@user',
+  bio: isOwnProfile.value ? (authStore.currentUser?.bio || 'Welcome to SocialApp!') : 'Social media user.',
   avatar: null,
-  followers: 1284,
-  following: 562,
-  posts: 47,
+  followers: 0,
+  following: 0,
+  posts: 0,
   isFollowing: false
 }))
 
 async function loadProfile() {
   loading.value = true
-  error.value = null
   try {
     const data = await usersService.getProfile(route.params.id)
     profileUser.value = data
   } catch {
-    // Use mock data if API is unavailable
     profileUser.value = mockProfile.value
   } finally {
     loading.value = false
+  }
+  loadPosts()
+}
+
+async function loadPosts() {
+  postsLoading.value = true
+  try {
+    const data = await postsService.getFeed(1, 20)
+    if (Array.isArray(data.posts)) {
+      userPosts.value = data.posts.filter(p => String(p.author?.id) === String(route.params.id))
+    }
+  } catch {
+    userPosts.value = []
+  } finally {
+    postsLoading.value = false
   }
 }
 
 async function toggleFollow() {
   if (!profileUser.value) return
-  followLoading.value = true
   try {
     await usersService.toggleFollow(route.params.id)
     profileUser.value.isFollowing = !profileUser.value.isFollowing
     profileUser.value.followers += profileUser.value.isFollowing ? 1 : -1
   } catch {
-    // Optimistic toggle on error
     profileUser.value.isFollowing = !profileUser.value.isFollowing
     profileUser.value.followers += profileUser.value.isFollowing ? 1 : -1
-  } finally {
-    followLoading.value = false
+  }
+}
+
+function handleLike(postId) {
+  const post = userPosts.value.find(p => p.id === postId)
+  if (post) {
+    post.liked = !post.liked
+    post.likes += post.liked ? 1 : -1
+    postsService.toggleLike(postId).catch(() => {
+      post.liked = !post.liked
+      post.likes += post.liked ? 1 : -1
+    })
+  }
+}
+
+function handleBookmark(postId) {
+  const post = userPosts.value.find(p => p.id === postId)
+  if (post) post.bookmarked = !post.bookmarked
+}
+
+async function handleDelete(postId) {
+  const index = userPosts.value.findIndex(p => p.id === postId)
+  if (index !== -1) {
+    const removed = userPosts.value.splice(index, 1)[0]
+    try {
+      await postsService.deletePost(postId)
+    } catch {
+      userPosts.value.splice(index, 0, removed)
+    }
   }
 }
 
 function formatCount(num) {
   if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
-  return num.toString()
+  return String(num || 0)
 }
 
 function getInitials(name) {
+  if (!name) return '?'
   return name.split(' ').map(n => n[0]).join('').toUpperCase()
 }
 
 function getAvatarColor(name) {
   const colors = ['#6C5CE7', '#00CEC9', '#E17055', '#00B894', '#FDCB6E', '#A29BFE', '#FF7675', '#74B9FF']
   let hash = 0
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  for (let i = 0; i < (name || '').length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
   return colors[Math.abs(hash) % colors.length]
 }
 
@@ -161,7 +202,6 @@ watch(() => route.params.id, () => {
                   v-else
                   class="follow-toggle-btn"
                   :class="{ following: displayUser.isFollowing }"
-                  :disabled="followLoading"
                   @click="toggleFollow"
                 >
                   {{ displayUser.isFollowing ? 'Following' : 'Follow' }}
@@ -189,20 +229,19 @@ watch(() => route.params.id, () => {
         <!-- User's Posts -->
         <div class="posts-section">
           <h3 class="section-title">Posts</h3>
-          <div v-if="userPosts.length === 0" class="empty-posts">
+          <div v-if="postsLoading" class="loading-posts">Loading posts...</div>
+          <div v-else-if="userPosts.length === 0" class="empty-posts">
             <p>No posts yet.</p>
           </div>
-          <div v-for="post in userPosts" :key="post.id" class="post-card">
-            <div class="post-header">
-              <div class="avatar avatar-md" :style="{ background: getAvatarColor(displayUser.name) }">
-                {{ getInitials(displayUser.name) }}
-              </div>
-              <div class="post-author-info">
-                <span class="post-author-name">{{ displayUser.name }}</span>
-                <span class="post-author-meta">{{ post.time }}</span>
-              </div>
-            </div>
-            <p class="post-content">{{ post.content }}</p>
+          <div v-else class="posts-list">
+            <PostCard
+              v-for="post in userPosts"
+              :key="post.id"
+              :post="post"
+              @like="handleLike"
+              @bookmark="handleBookmark"
+              @delete="handleDelete"
+            />
           </div>
         </div>
       </div>
@@ -211,30 +250,16 @@ watch(() => route.params.id, () => {
 </template>
 
 <style scoped>
-.profile-page {
-  min-height: 100vh;
-  background: var(--color-bg);
-}
+.profile-page { min-height: 100vh; background: var(--color-bg); }
 
 .top-bar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(12px);
-  background: rgba(255, 255, 255, 0.92);
+  position: sticky; top: 0; z-index: 100; border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(12px); background: rgba(255, 255, 255, 0.92);
 }
-
 .top-bar-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.65rem 1.5rem;
-  gap: 1rem;
+  max-width: 1200px; margin: 0 auto; display: flex; align-items: center;
+  justify-content: space-between; padding: 0.65rem 1.5rem; gap: 1rem;
 }
-
 .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .brand-link { display: flex; align-items: center; gap: 10px; text-decoration: none; }
 .logo-icon { color: var(--color-primary); display: flex; }
@@ -243,14 +268,9 @@ watch(() => route.params.id, () => {
 .search-bar { flex: 1; max-width: 400px; position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; }
 .search-input {
-  width: 100%;
-  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  background: var(--color-input-bg);
-  border: 1.5px solid transparent;
-  border-radius: var(--radius-full);
-  font-size: 0.875rem;
-  color: var(--color-text);
-  transition: all var(--transition);
+  width: 100%; padding: 0.5rem 0.75rem 0.5rem 2.5rem; background: var(--color-input-bg);
+  border: 1.5px solid transparent; border-radius: var(--radius-full); font-size: 0.875rem;
+  color: var(--color-text); transition: all var(--transition);
 }
 .search-input::placeholder { color: var(--color-text-muted); }
 .search-input:focus { border-color: var(--color-primary); background: var(--color-surface); box-shadow: 0 0 0 3px var(--color-primary-bg); }
@@ -265,205 +285,55 @@ watch(() => route.params.id, () => {
   display: flex; align-items: center; justify-content: center; border-radius: 50%;
   font-weight: 600; color: white; flex-shrink: 0; user-select: none;
 }
-.avatar-sm { width: 32px; height: 32px; font-size: 0.7rem; }
-.avatar-md { width: 40px; height: 40px; font-size: 0.8rem; }
 .avatar-xl { width: 80px; height: 80px; font-size: 1.5rem; }
 
-.profile-container {
-  max-width: 700px;
-  margin: 0 auto;
-  padding: 1.25rem 1rem;
-}
+.profile-container { max-width: 700px; margin: 0 auto; padding: 1.25rem 1rem; }
 
-.loading-state {
-  text-align: center;
-  padding: 3rem;
-  color: var(--color-text-secondary);
-  font-size: 0.95rem;
+.loading-state, .loading-posts {
+  text-align: center; padding: 3rem; color: var(--color-text-secondary); font-size: 0.95rem;
 }
 
 .profile-header-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border);
-  overflow: hidden;
-  margin-bottom: 1.25rem;
+  background: var(--color-surface); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm); border: 1px solid var(--color-border);
+  overflow: hidden; margin-bottom: 1.25rem;
 }
+.profile-cover { height: 120px; background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light, #A29BFE)); }
+.profile-header-body { padding: 0 1.5rem 1.5rem; position: relative; }
+.profile-avatar-wrapper { margin-top: -40px; margin-bottom: 0.75rem; }
+.profile-avatar-wrapper .avatar-xl { border: 4px solid var(--color-surface); }
 
-.profile-cover {
-  height: 120px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light, #A29BFE));
-}
-
-.profile-header-body {
-  padding: 0 1.5rem 1.5rem;
-  position: relative;
-}
-
-.profile-avatar-wrapper {
-  margin-top: -40px;
-  margin-bottom: 0.75rem;
-}
-
-.profile-avatar-wrapper .avatar-xl {
-  border: 4px solid var(--color-surface);
-}
-
-.profile-name-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.profile-display-name {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--color-text);
-  letter-spacing: -0.01em;
-}
-
-.profile-handle {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-
-.profile-bio-text {
-  font-size: 0.9rem;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-  margin-bottom: 1rem;
-}
-
-.profile-stats-row {
-  display: flex;
-  gap: 1.5rem;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.stat-number {
-  font-weight: 700;
-  font-size: 0.9rem;
-  color: var(--color-text);
-}
-
-.stat-text {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
+.profile-name-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
+.profile-display-name { font-size: 1.3rem; font-weight: 700; color: var(--color-text); letter-spacing: -0.01em; }
+.profile-handle { font-size: 0.85rem; color: var(--color-text-muted); }
+.profile-bio-text { font-size: 0.9rem; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 1rem; }
+.profile-stats-row { display: flex; gap: 1.5rem; }
+.stat-item { display: flex; align-items: center; gap: 4px; }
+.stat-number { font-weight: 700; font-size: 0.9rem; color: var(--color-text); }
+.stat-text { font-size: 0.85rem; color: var(--color-text-muted); }
 
 .edit-profile-btn {
-  padding: 0.45rem 1.2rem;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition);
+  padding: 0.45rem 1.2rem; border: 1.5px solid var(--color-border); border-radius: var(--radius-full);
+  background: var(--color-surface); color: var(--color-text); font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; transition: all var(--transition);
 }
-
-.edit-profile-btn:hover {
-  border-color: var(--color-text);
-}
+.edit-profile-btn:hover { border-color: var(--color-text); }
 
 .follow-toggle-btn {
-  padding: 0.45rem 1.2rem;
-  border: none;
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  color: white;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition);
+  padding: 0.45rem 1.2rem; border: none; border-radius: var(--radius-full);
+  background: var(--color-primary); color: white; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; transition: all var(--transition);
 }
+.follow-toggle-btn:hover { background: var(--color-primary-hover); }
+.follow-toggle-btn.following { background: var(--color-surface); color: var(--color-text); border: 1.5px solid var(--color-border); }
+.follow-toggle-btn.following:hover { border-color: var(--color-danger); color: var(--color-danger); }
 
-.follow-toggle-btn:hover {
-  background: var(--color-primary-hover);
-}
-
-.follow-toggle-btn.following {
-  background: var(--color-surface);
-  color: var(--color-text);
-  border: 1.5px solid var(--color-border);
-}
-
-.follow-toggle-btn.following:hover {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-.follow-toggle-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.posts-section {
-  margin-bottom: 2rem;
-}
-
-.section-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin-bottom: 1rem;
-}
-
+.posts-section { margin-bottom: 2rem; }
+.section-title { font-size: 1rem; font-weight: 700; color: var(--color-text); margin-bottom: 1rem; }
+.posts-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .empty-posts {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: 2.5rem;
-  text-align: center;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
-}
-
-.post-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border);
-  margin-bottom: 0.75rem;
-}
-
-.post-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 0.75rem;
-}
-
-.post-author-name {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--color-text);
-}
-
-.post-author-meta {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.post-author-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.post-content {
-  font-size: 0.9rem;
-  color: var(--color-text);
-  line-height: 1.55;
+  background: var(--color-surface); border-radius: var(--radius-lg); padding: 2.5rem;
+  text-align: center; border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {

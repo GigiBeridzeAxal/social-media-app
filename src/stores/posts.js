@@ -1,219 +1,182 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { postsService } from '../services/posts'
 
 export const usePostsStore = defineStore('posts', () => {
   const posts = ref([])
-  const currentPost = ref(null)
   const loading = ref(false)
-  const error = ref(null)
-  const page = ref(1)
   const hasMore = ref(true)
-  const total = ref(0)
+  const page = ref(1)
 
-  function resetPosts() {
-    posts.value = []
-    page.value = 1
-    hasMore.value = true
-    total.value = 0
-  }
+  const mockPosts = [
+    {
+      id: 1,
+      author: { id: '101', name: 'Jessica Park', username: '@jessicapark', avatar: null },
+      content: 'Just shipped a major update to our design system! New components, better accessibility, and dark mode support. Check it out and let me know what you think.',
+      image: null,
+      likes: 142,
+      comments: 28,
+      shares: 15,
+      time: '2h ago',
+      liked: false,
+      bookmarked: false
+    },
+    {
+      id: 2,
+      author: { id: '102', name: 'David Kim', username: '@davidkim', avatar: null },
+      content: 'Hot take: CSS has become more powerful than most people realize. Container queries, :has() selector, subgrid — we barely need JavaScript for layout anymore. The web platform is amazing.',
+      image: null,
+      likes: 89,
+      comments: 45,
+      shares: 22,
+      time: '4h ago',
+      liked: true,
+      bookmarked: false
+    },
+    {
+      id: 3,
+      author: { id: '103', name: 'Mia Thompson', username: '@miathompson', avatar: null },
+      content: 'Spent the weekend building a real-time collaborative whiteboard with Vue 3 and WebSockets. The Composition API makes reactive state management so elegant. Thread with demo below.',
+      image: null,
+      likes: 234,
+      comments: 67,
+      shares: 41,
+      time: '6h ago',
+      liked: false,
+      bookmarked: true
+    },
+    {
+      id: 4,
+      author: { id: '104', name: 'Ryan Foster', username: '@ryanfoster', avatar: null },
+      content: 'Tip: Use `git stash --include-untracked` instead of `git stash`. You\'ll thank me later when you realize your new files aren\'t lost.',
+      image: null,
+      likes: 312,
+      comments: 19,
+      shares: 88,
+      time: '8h ago',
+      liked: false,
+      bookmarked: false
+    },
+    {
+      id: 5,
+      author: { id: '105', name: 'Olivia Martinez', username: '@oliviam', avatar: null },
+      content: 'Our team just open-sourced our internal component library! 1200+ components, fully typed, tree-shakeable. Building in public feels incredible. Link in bio.',
+      image: null,
+      likes: 567,
+      comments: 93,
+      shares: 124,
+      time: '12h ago',
+      liked: true,
+      bookmarked: false
+    }
+  ]
 
-  async function fetchFeed(reset = false) {
+  async function fetchFeed() {
     if (loading.value) return
     loading.value = true
-    error.value = null
-
     try {
-      if (reset) resetPosts()
-
-      const currentPage = reset ? 1 : page.value
-      const data = await postsService.getFeed(currentPage)
-
-      if (reset) {
-        posts.value = data.posts
-      } else {
-        const existingIds = new Set(posts.value.map(p => p.id))
-        const newPosts = data.posts.filter(p => !existingIds.has(p.id))
-        posts.value = [...posts.value, ...newPosts]
+      const data = await postsService.getFeed(page.value)
+      if (Array.isArray(data.posts)) {
+        posts.value = page.value === 1 ? data.posts : [...posts.value, ...data.posts]
+        hasMore.value = data.hasMore !== false
+        page.value++
       }
-
-      total.value = data.total
-      hasMore.value = posts.value.length < data.total
-      page.value = currentPage + 1
-    } catch (err) {
-      error.value = err.message
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function fetchPosts(reset = false) {
-    if (loading.value) return
-    loading.value = true
-    error.value = null
-
-    try {
-      if (reset) resetPosts()
-
-      const currentPage = reset ? 1 : page.value
-      const data = await postsService.getPosts(currentPage)
-
-      if (reset) {
-        posts.value = data.posts
-      } else {
-        const existingIds = new Set(posts.value.map(p => p.id))
-        const newPosts = data.posts.filter(p => !existingIds.has(p.id))
-        posts.value = [...posts.value, ...newPosts]
+    } catch {
+      if (posts.value.length === 0) {
+        posts.value = mockPosts
+        hasMore.value = false
       }
-
-      total.value = data.total
-      hasMore.value = posts.value.length < data.total
-      page.value = currentPage + 1
-    } catch (err) {
-      error.value = err.message
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function fetchPostById(id) {
-    loading.value = true
-    error.value = null
-
-    try {
-      const data = await postsService.getPost(id)
-      currentPost.value = data.post
-      return data.post
-    } catch (err) {
-      error.value = err.message
-      return null
     } finally {
       loading.value = false
     }
   }
 
   async function createPost(content, image = null) {
-    loading.value = true
-    error.value = null
-
     try {
-      const data = await postsService.createPost(content, image)
-      posts.value = [data.post, ...posts.value]
-      total.value += 1
-      return data.post
-    } catch (err) {
-      error.value = err.message
-      return null
-    } finally {
-      loading.value = false
+      const newPost = await postsService.createPost(content, image)
+      posts.value.unshift(newPost)
+      return newPost
+    } catch {
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      const mockPost = {
+        id: Date.now(),
+        author: {
+          id: user.id || 'me',
+          name: user.name || 'You',
+          username: user.username || '@you',
+          avatar: null
+        },
+        content,
+        image,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        time: 'Just now',
+        liked: false,
+        bookmarked: false
+      }
+      posts.value.unshift(mockPost)
+      return mockPost
     }
   }
 
-  async function deletePost(id) {
-    error.value = null
-
+  async function toggleLike(postId) {
+    const post = posts.value.find(p => p.id === postId)
+    if (!post) return
+    post.liked = !post.liked
+    post.likes += post.liked ? 1 : -1
     try {
-      await postsService.deletePost(id)
-      posts.value = posts.value.filter(p => p.id !== id)
-      total.value -= 1
-      if (currentPost.value?.id === id) {
-        currentPost.value = null
-      }
-      return true
-    } catch (err) {
-      error.value = err.message
-      return false
+      await postsService.toggleLike(postId)
+    } catch {
+      post.liked = !post.liked
+      post.likes += post.liked ? 1 : -1
     }
   }
 
-  async function toggleLike(id) {
-    error.value = null
-
+  async function deletePost(postId) {
+    const index = posts.value.findIndex(p => p.id === postId)
+    if (index === -1) return
+    const removed = posts.value.splice(index, 1)[0]
     try {
-      const data = await postsService.toggleLike(id)
-      const post = posts.value.find(p => p.id === id)
-      if (post) {
-        post.liked = data.liked
-        post.likesCount = data.likesCount
-      }
-      if (currentPost.value?.id === id) {
-        currentPost.value.liked = data.liked
-        currentPost.value.likesCount = data.likesCount
-      }
-      return data
-    } catch (err) {
-      error.value = err.message
-      return null
-    }
-  }
-
-  async function toggleBookmark(id) {
-    error.value = null
-
-    try {
-      const data = await postsService.toggleBookmark(id)
-      const post = posts.value.find(p => p.id === id)
-      if (post) {
-        post.bookmarked = data.bookmarked
-      }
-      if (currentPost.value?.id === id) {
-        currentPost.value.bookmarked = data.bookmarked
-      }
-      return data
-    } catch (err) {
-      error.value = err.message
-      return null
+      await postsService.deletePost(postId)
+    } catch {
+      posts.value.splice(index, 0, removed)
     }
   }
 
   async function addComment(postId, content) {
-    error.value = null
-
     try {
-      const data = await postsService.addComment(postId, content)
+      const comment = await postsService.addComment(postId, content)
       const post = posts.value.find(p => p.id === postId)
-      if (post) {
-        post.commentsCount += 1
+      if (post) post.comments++
+      return comment
+    } catch {
+      const post = posts.value.find(p => p.id === postId)
+      if (post) post.comments++
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      return {
+        id: Date.now(),
+        author: { name: user.name || 'You', username: user.username || '@you' },
+        content,
+        time: 'Just now'
       }
-      if (currentPost.value?.id === postId) {
-        currentPost.value.commentsCount += 1
-      }
-      return data.comment
-    } catch (err) {
-      error.value = err.message
-      return null
     }
   }
 
-  async function fetchComments(postId, commentPage = 1) {
-    error.value = null
-
-    try {
-      const data = await postsService.getComments(postId, commentPage)
-      return data
-    } catch (err) {
-      error.value = err.message
-      return null
-    }
+  function toggleBookmark(postId) {
+    const post = posts.value.find(p => p.id === postId)
+    if (post) post.bookmarked = !post.bookmarked
   }
 
   return {
     posts,
-    currentPost,
     loading,
-    error,
-    page,
     hasMore,
-    total,
     fetchFeed,
-    fetchPosts,
-    fetchPostById,
     createPost,
-    deletePost,
     toggleLike,
-    toggleBookmark,
+    deletePost,
     addComment,
-    fetchComments,
-    resetPosts,
+    toggleBookmark
   }
 })

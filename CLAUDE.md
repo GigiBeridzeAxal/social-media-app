@@ -5,291 +5,124 @@ You are NOT a chatbot having a conversation. You are an agent executing a specif
 
 ## Your Current Task
 
-[Delegated by manager "Diana"]
+[Delegated by manager "Diana", execution order 1]
 
-## Task: Build Protected Frontend Routes, API Service Layer & Auth Enhancements
+## Task: Build Dashboard Frontend Components (with GitHub Push)
 
-You are working on a **Vue 3 + Pinia + Vue Router** social media app. The repo is at `https://github.com/GigiBeridzeAxal/social-media-app.git` (public, main branch).
+**CRITICAL: You MUST push your work to GitHub when done. Do NOT just commit locally.**
 
 ### Step 1: Clone the repo
 ```bash
 git clone https://github.com/GigiBeridzeAxal/social-media-app.git
 cd social-media-app
-npm install
 ```
 
-### What Already Exists
+### Step 2: Context
 
-Frontend files in `src/`:
-- `src/main.js` - Creates app with Pinia + Router
-- `src/App.vue` - Just `<router-view />`
-- `src/router/index.js` - Router with guards: `meta.requiresAuth` redirects to SignIn, `meta.guest` redirects to Dashboard
-- `src/stores/auth.js` - Pinia store with signIn, signUp, signOut, checkAuth, token in localStorage
-- `src/views/HomeView.vue` - Dashboard/feed page (fully built with mock data)
-- `src/views/auth/SignInView.vue` - Sign in page (fully built)
-- `src/views/auth/SignUpView.vue` - Sign up page (fully built)
-- `src/views/auth/ForgotPasswordView.vue` - Forgot password page
-- `src/assets/main.css` - Global CSS with CSS variables
+This is a **Vue 3 + Pinia + Vue Router** app deployed on Vercel. The main dashboard view is `src/views/HomeView.vue`. There's a `src/views/ProfileView.vue` and `src/views/SettingsView.vue`. Auth store is at `src/stores/auth.js`. Router is at `src/router/index.js`.
 
-The API base URL is `import.meta.env.VITE_API_URL || ''`
-Auth tokens are stored in localStorage as 'token' and 'user'.
+The app uses **no CSS framework** — it's custom CSS. The existing design uses a dark theme with these colors:
+- Background: `#0a0a0a` / `#111`
+- Cards: `#1a1a1a` / `#222`
+- Accent: `#6366f1` (indigo)
+- Text: `#fff` primary, `#888` / `#aaa` secondary
+- Borders: `#333`
 
-### What You Need to Build
+### Step 3: Create Components
 
-**1. API Service Layer** (`src/services/api.js`)
-Create a centralized API service using fetch (no axios needed, keep it lightweight):
+Create the directory `src/components/` and build these components:
 
-```javascript
-const API_BASE = import.meta.env.VITE_API_URL || ''
+1. **`src/components/PostCard.vue`**:
+   - Displays a single post: author avatar+name, timestamp, content text, optional image
+   - Like button with count (heart icon, filled when liked)
+   - Comment button with count
+   - Delete button (only visible if current user is author)
+   - Emits events: `like`, `comment`, `delete`
 
-class ApiService {
-  constructor() {
-    this.baseUrl = API_BASE
-  }
+2. **`src/components/CreatePost.vue`**:
+   - Text area for post content
+   - Optional image URL input
+   - Submit button
+   - Shows loading state while posting
+   - Emits `posted` event on success
 
-  getToken() {
-    return localStorage.getItem('token')
-  }
+3. **`src/components/PostFeed.vue`**:
+   - Renders a list of `PostCard` components
+   - Infinite scroll or "Load More" button for pagination
+   - Shows loading skeleton while fetching
+   - Shows "No posts yet" empty state
+   - Props: `posts[]`, `loading`, `hasMore`
 
-  async request(endpoint, options = {}) {
-    const url = `${this.baseUrl}${endpoint}`
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    }
+4. **`src/components/ProfileDropdown.vue`**:
+   - Triggered by clicking user avatar in the top bar
+   - Shows: user name, email
+   - Menu items: "My Profile", "Settings", "Logout"
+   - Closes when clicking outside
+   - Uses auth store for user info and logout
 
-    const token = this.getToken()
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
+5. **`src/components/Sidebar.vue`**:
+   - Left sidebar for dashboard
+   - Nav items: Home, Explore, Notifications, Messages (placeholder), Profile, Settings
+   - Active state for current route
+   - User info at bottom
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'include', // for httpOnly cookies
-    })
+6. **`src/components/CommentSection.vue`**:
+   - Shows list of comments on a post
+   - Input field to add new comment
+   - Each comment shows: author, text, timestamp
 
-    // Handle 401 - token expired/invalid
-    if (response.status === 401) {
-      // Try to refresh token
-      const refreshed = await this.refreshToken()
-      if (refreshed) {
-        // Retry original request with new token
-        headers['Authorization'] = `Bearer ${this.getToken()}`
-        const retryResponse = await fetch(url, { ...options, headers, credentials: 'include' })
-        if (!retryResponse.ok) {
-          const error = await retryResponse.json().catch(() => ({ error: 'Request failed' }))
-          throw new ApiError(retryResponse.status, error.error || 'Request failed')
-        }
-        return retryResponse.json()
-      }
-      // Refresh failed - clear auth and redirect to login
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      window.location.href = '/signin'
-      throw new ApiError(401, 'Session expired')
-    }
+7. **`src/components/UserCard.vue`**:
+   - Small card showing user avatar, name, bio snippet
+   - Follow/Unfollow button
+   - Used in suggestions sidebar
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }))
-      throw new ApiError(response.status, error.error || 'Request failed')
-    }
+### Step 4: Update HomeView.vue
 
-    return response.json()
-  }
+Update `src/views/HomeView.vue` to use the new components:
+- Layout: Sidebar (left) | Main Feed (center) | Suggestions (right)
+- Main feed: CreatePost at top, then PostFeed below
+- Import and use the Pinia stores (assume `src/stores/posts.js` and `src/stores/users.js` exist with actions: `fetchFeed()`, `createPost()`, `toggleLike()`, `addComment()`, `deletePost()`)
+- On mount, call `postsStore.fetchFeed()`
 
-  async refreshToken() {
-    try {
-      const token = this.getToken()
-      if (!token) return false
+### Step 5: Update ProfileView.vue
 
-      const response = await fetch(`${this.baseUrl}/api/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include',
-      })
+Update `src/views/ProfileView.vue`:
+- Show user profile header (avatar, name, bio, stats: posts/followers/following)
+- Follow/unfollow button (if not own profile)
+- Tab: Posts (list of user's posts using PostCard)
+- Edit profile button (if own profile) linking to settings
 
-      if (!response.ok) return false
+### Step 6: Update App.vue
 
-      const data = await response.json()
-      localStorage.setItem('token', data.token)
-      if (data.user) localStorage.setItem('user', JSON.stringify(data.user))
-      return true
-    } catch {
-      return false
-    }
-  }
+Update `src/App.vue` to include:
+- Top navigation bar with app name, search placeholder, and ProfileDropdown
+- Only show navbar when user is authenticated
 
-  // Convenience methods
-  get(endpoint) { return this.request(endpoint) }
-  post(endpoint, body) { return this.request(endpoint, { method: 'POST', body: JSON.stringify(body) }) }
-  put(endpoint, body) { return this.request(endpoint, { method: 'PUT', body: JSON.stringify(body) }) }
-  delete(endpoint) { return this.request(endpoint, { method: 'DELETE' }) }
-}
+### Step 7: Git commit and PUSH
 
-class ApiError extends Error {
-  constructor(status, message) {
-    super(message)
-    this.status = status
-  }
-}
+**IMPORTANT: Before pushing, pull latest changes first:**
+```bash
+git pull origin main
+```
+If there are merge conflicts, resolve them keeping both sides' changes.
 
-export const api = new ApiService()
-export { ApiError }
+Then:
+```bash
+git add -A
+git commit -m "Add dashboard UI components: PostCard, CreatePost, PostFeed, Sidebar, ProfileDropdown, and update views"
+git push origin main
 ```
 
-**2. Posts Service** (`src/services/posts.js`)
-```javascript
-import { api } from './api'
+**Verify the push succeeded by running `git log origin/main --oneline -3` after pushing.**
 
-export const postsService = {
-  getFeed(page = 1, limit = 20) {
-    return api.get(`/api/posts?page=${page}&limit=${limit}`)
-  },
-  getPost(id) {
-    return api.get(`/api/posts/${id}`)
-  },
-  createPost(content, image = null) {
-    return api.post('/api/posts', { content, image })
-  },
-  deletePost(id) {
-    return api.delete(`/api/posts/${id}`)
-  },
-  toggleLike(id) {
-    return api.post(`/api/posts/${id}/like`)
-  },
-  toggleBookmark(id) {
-    return api.post(`/api/posts/${id}/bookmark`)
-  },
-  getComments(postId, page = 1) {
-    return api.get(`/api/posts/${postId}/comments?page=${page}`)
-  },
-  addComment(postId, content) {
-    return api.post(`/api/posts/${postId}/comments`, { content })
-  },
-}
-```
-
-**3. Users Service** (`src/services/users.js`)
-```javascript
-import { api } from './api'
-
-export const usersService = {
-  getProfile(id) {
-    return api.get(`/api/users/${id}`)
-  },
-  updateProfile(id, data) {
-    return api.put(`/api/users/${id}`, data)
-  },
-  toggleFollow(id) {
-    return api.post(`/api/users/${id}/follow`)
-  },
-}
-```
-
-**4. Update Auth Store** (`src/stores/auth.js`)
-Update the existing auth store to:
-- Use the new API service for all calls
-- Add `logout()` method that calls `/api/auth/logout` to clear httpOnly cookie
-- Add `changePassword(currentPassword, newPassword)` method
-- Keep existing signIn, signUp, checkAuth, etc.
-- Make `signOut` call the logout endpoint before clearing local state
-
-**5. Profile Page** (`src/views/ProfileView.vue`)
-Create a user profile page that:
-- Shows user info (name, bio, avatar, follower/following counts)
-- Shows the user's posts
-- Has a follow/unfollow button (if viewing someone else's profile)
-- Has an "Edit Profile" button (if viewing own profile)
-- Is a protected route (requires auth)
-- Route: `/profile/:id`
-- Style it consistently with the existing HomeView design (use the same CSS variables, card styles, avatar system)
-
-**6. Settings Page** (`src/views/SettingsView.vue`)
-Create a settings page that:
-- Has a form to update profile (name, bio)
-- Has a form to change password (current password, new password, confirm new password)
-- Has a "Sign Out" button
-- Has a "Delete Account" button (just shows confirmation, doesn't need to work yet)
-- Is a protected route
-- Route: `/settings`
-- Style consistently with existing pages
-
-**7. Update Router** (`src/router/index.js`)
-Add the new routes to the existing router:
-```javascript
-{
-  path: '/profile/:id',
-  name: 'Profile',
-  component: () => import('../views/ProfileView.vue'),
-  meta: { requiresAuth: true }
-},
-{
-  path: '/settings',
-  name: 'Settings',
-  component: () => import('../views/SettingsView.vue'),
-  meta: { requiresAuth: true }
-},
-```
-
-Keep all existing routes and the beforeEach guard exactly as they are.
-
-**8. Update HomeView sidebar links**
-In `src/views/HomeView.vue`, update the sidebar navigation links so that:
-- "Profile" link goes to `/profile/{currentUser.id}` 
-- "Settings" link goes to `/settings`
-- Use `router-link` or `router.push` instead of `@click.prevent` for these two
-
-### CSS Variables (for reference)
-The app uses these CSS variables defined in `src/assets/main.css`:
-- `--color-bg`, `--color-surface`, `--color-primary`, `--color-primary-hover`, `--color-primary-bg`
-- `--color-text`, `--color-text-secondary`, `--color-text-muted`
-- `--color-border`, `--color-border-focus`, `--color-input-bg`
-- `--color-danger`, `--color-success`
-- `--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-full`
-- `--shadow-sm`, `--shadow-md`
-- `--transition`
-- `--font-family`
-
-### Important Notes
-- Keep the same styling approach (scoped CSS, no external CSS framework)
-- Use the same avatar system (getInitials + getAvatarColor functions) from HomeView
-- All new pages should have responsive design
-- The profile and settings pages should have the same top-bar navigation as HomeView
-- Don't install any new npm packages - use only what's already in package.json
-
-### After everything is done:
-- Make sure all files compile (`npm run build` should succeed)
-- Commit all changes with descriptive message
-- Push to main branch
-
-### File structure when done:
-```
-src/
-├── services/
-│   ├── api.js (NEW - central API service with auth interceptor)
-│   ├── posts.js (NEW - posts API calls)
-│   └── users.js (NEW - users API calls)
-├── stores/
-│   └── auth.js (UPDATED - use api service, add logout/changePassword)
-├── router/
-│   └── index.js (UPDATED - add profile + settings routes)
-├── views/
-│   ├── HomeView.vue (UPDATED - wire sidebar links to router)
-│   ├── ProfileView.vue (NEW - user profile page)
-│   ├── SettingsView.vue (NEW - settings + change password)
-│   └── auth/
-│       ├── SignInView.vue (existing)
-│       ├── SignUpView.vue (existing)
-│       └── ForgotPasswordView.vue (existing)
-├── App.vue (existing, no changes)
-├── main.js (existing, no changes)
-└── assets/
-    └── main.css (existing, no changes)
-```
+### Acceptance Criteria:
+- All 7 components created in `src/components/`
+- HomeView.vue updated with real component layout
+- ProfileView.vue updated with real profile UI
+- App.vue updated with navbar + ProfileDropdown
+- Dark theme consistent with existing design
+- Everything committed AND PUSHED to `origin/main` on GitHub
+- `git push` must succeed — if it fails (e.g., remote has newer commits), do `git pull --rebase origin main` then push again
 
 ## Your Environment
 
