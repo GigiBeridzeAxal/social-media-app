@@ -51,6 +51,70 @@ export default async function handler(req, res) {
     }
   }
 
+  if (req.method === 'PUT') {
+    try {
+      const post = await Post.findById(id)
+      if (!post) {
+        return res.status(404).json({ error: 'Post not found' })
+      }
+
+      if (post.author.toString() !== decoded.userId) {
+        return res.status(403).json({ error: 'You can only edit your own posts' })
+      }
+
+      const { content, image } = req.body || {}
+
+      if (content !== undefined) {
+        if (!content.trim()) {
+          return res.status(400).json({ error: 'Content is required' })
+        }
+        if (content.length > 500) {
+          return res.status(400).json({ error: 'Content must be at most 500 characters' })
+        }
+        post.content = content.trim()
+      }
+
+      if (image !== undefined) {
+        post.image = image || null
+      }
+
+      await post.save()
+
+      const populated = await Post.findById(id)
+        .populate('author', 'name email avatar')
+        .lean()
+
+      const commentsCount = await Comment.countDocuments({ post: id })
+
+      return res.status(200).json({
+        post: {
+          id: populated._id.toString(),
+          author: {
+            id: populated.author._id.toString(),
+            name: populated.author.name,
+            email: populated.author.email,
+            avatar: populated.author.avatar,
+          },
+          content: populated.content,
+          image: populated.image,
+          likesCount: populated.likes.length,
+          commentsCount,
+          liked: populated.likes.some(uid => uid.toString() === decoded.userId),
+          bookmarked: populated.bookmarks.some(uid => uid.toString() === decoded.userId),
+          createdAt: populated.createdAt.toISOString(),
+          updatedAt: populated.updatedAt.toISOString(),
+        },
+      })
+    } catch (error) {
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(e => e.message)
+        return res.status(400).json({ error: messages[0] })
+      }
+      console.error('Update post error:', error)
+      return res.status(500).json({ error: 'Internal server error' })
+    }
+  }
+
   if (req.method === 'DELETE') {
     try {
       const post = await Post.findById(id)

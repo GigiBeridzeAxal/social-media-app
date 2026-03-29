@@ -2,6 +2,9 @@ import { api } from './api'
 
 export const postsService = {
   getFeed(page = 1, limit = 20) {
+    return api.get(`/api/feed?page=${page}&limit=${limit}`)
+  },
+  getPosts(page = 1, limit = 20) {
     return api.get(`/api/posts?page=${page}&limit=${limit}`)
   },
   getPost(id) {
@@ -9,6 +12,9 @@ export const postsService = {
   },
   createPost(content, image = null) {
     return api.post('/api/posts', { content, image })
+  },
+  updatePost(id, data) {
+    return api.put(`/api/posts/${id}`, data)
   },
   deletePost(id) {
     return api.delete(`/api/posts/${id}`)

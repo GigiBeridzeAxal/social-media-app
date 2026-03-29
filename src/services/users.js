@@ -10,4 +10,7 @@ export const usersService = {
   toggleFollow(id) {
     return api.post(`/api/users/${id}/follow`)
   },
+  getUserPosts(id, page = 1, limit = 20) {
+    return api.get(`/api/users/${id}/posts?page=${page}&limit=${limit}`)
+  },
 }
